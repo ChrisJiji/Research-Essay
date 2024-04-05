@@ -1,0 +1,777 @@
+---
+output: pdf_document
+---
+```{r}
+### Section 2.1
+library(tidyverse)
+library(pwr)
+set.seed(1)
+
+## Generate the plots for effect size vs pilot study sample size and main study sample size and pilot study
+
+# this is using 
+ES <- 0.0099 # effect size, change to 0.1379 for large
+f2 <- ES/(1-ES)
+a = sqrt(f2)
+muvec = c(-a, a)
+K = 2 # number of groups
+alpha = 0.05 # sig level
+beta = 0.2 # power
+R <- 10000 # replications
+n = 10 # sample size
+effs_10 <- rep(0, R) # effect sizes
+ns_10 <- rep(0, R)# sample sizes
+for(r in 1:R){
+  pilot.data  <- rnorm(n = K*n, mean = rep(muvec,each=n), sd = rep(1,K*n))
+  pilot.anova <- as.matrix(anova(aov(pilot.data ~ rep(as.factor(1:K),each=n))))
+  SSb <- pilot.anova[1,2]
+  SSt <- pilot.anova[1,2] + pilot.anova[2,2]
+  eta2 <- SSb/SSt
+  effs_10[r] <- 2*sqrt(eta2/(1-eta2))
+  temp <- try(pwr.t.test(d = 2 * sqrt(eta2/(1-eta2)), sig.level = alpha, power = 1-beta)$n, silent = TRUE)
+  if ('try-error' %in% class(temp)) ns_10[r] <- NA
+  else ns_10[r] <- ceiling(temp)
+}
+
+
+n = 25
+effs_25 <- rep(0, R) # effect sizes
+ns_25 <- rep(0, R)# sample sizes
+for(r in 1:R){
+  pilot.data  <- rnorm(n = K*n, mean = rep(muvec,each=n), sd = rep(1,K*n))
+  pilot.anova <- as.matrix(anova(aov(pilot.data ~ rep(as.factor(1:K),each=n))))
+  SSb <- pilot.anova[1,2]
+  SSt <- pilot.anova[1,2] + pilot.anova[2,2]
+  eta2 <- SSb/SSt
+  effs_25[r] <- 2*sqrt(eta2/(1-eta2))
+  temp <- try(pwr.t.test(d = 2 * sqrt(eta2/(1-eta2)), sig.level = alpha, power = 1-beta)$n, silent = TRUE)
+  if ('try-error' %in% class(temp)) ns_10[r] <- NA
+  else ns_25[r] <- ceiling(temp)
+}
+
+n = 50
+effs_50 <- rep(0, R) # effect sizes
+ns_50 <- rep(0, R)# sample sizes
+for(r in 1:R){
+  pilot.data  <- rnorm(n = K*n, mean = rep(muvec,each=n), sd = rep(1,K*n))
+  pilot.anova <- as.matrix(anova(aov(pilot.data ~ rep(as.factor(1:K),each=n))))
+  SSb <- pilot.anova[1,2]
+  SSt <- pilot.anova[1,2] + pilot.anova[2,2]
+  eta2 <- SSb/SSt
+  effs_50[r] <- 2*sqrt(eta2/(1-eta2))
+  temp <- try(pwr.t.test(d = 2 * sqrt(eta2/(1-eta2)), sig.level = alpha, power = 1-beta)$n, silent = TRUE)
+  if ('try-error' %in% class(temp)) ns_10[r] <- NA
+  else ns_50[r] <- ceiling(temp)
+}
+
+effs <- data.frame(cbind(effs_10, effs_25, effs_50))
+effs %>% pivot_longer(1:3) %>% ggplot(aes(x = name, y = value, fill = name)) + geom_violin() + xlab("Pilot Study Sample Size") + 
+  ylab("Effect Size Estimate") + ggtitle("Effect Size Estimate vs Pilot Study Sample Size") + scale_x_discrete(labels = c("10", "25", "50")) + 
+  geom_point(aes(x = 1, y = 0.2)) + geom_point(aes(x = 2, y = 0.2)) + geom_point(aes(x = 3, y = 0.2)) + 
+  theme(legend.position = "none")
+
+ns <- data.frame(cbind(ns_10, ns_25, ns_50))
+n_needed <- pwr.t.test(d=0.2, sig.level=0.05, power=0.8)$n
+ns %>% pivot_longer(1:3) %>% filter(value <= 2000) %>% 
+  ggplot(aes(x = name, y = value, fill = name)) + geom_violin() + xlab("Pilot Study Sample Size") + 
+  ylab("Main Study Sample Size Estimate") + ggtitle("Main Study Sample Size Estimate vs Pilot Study Sample Size") + scale_x_discrete(labels = c("10", "25", "50")) + 
+  geom_point(aes(x = 1, y = n_needed)) + geom_point(aes(x = 2, y = n_needed)) + geom_point(aes(x = 3, y = n_needed)) + 
+  theme(legend.position = "none")
+
+
+```
+
+```{r}
+### Section 2.2
+library(tidyverse)
+library(pwr)
+set.seed(1)
+
+#log normal section 2
+d <- 0.2
+muvec <- c(0, d)
+
+pooled_variance <- function(data){
+  n <- nrow(data) / 2
+  ((n-1) * var(data$effect[data$condition==1]) + (n-1) * var(data$effect[data$condition==2])) / (2*n - 2)
+}
+cRoot <- function(x) exp(1/3 * log(x))
+
+# skewness 1
+const = -1 + 1/3*cRoot(81/2-27*sqrt(5)/2) + cRoot(1/2*(3+sqrt(5))) 
+# skewness 0.5
+#const = (-2 + cRoot(9-sqrt(17)) + cRoot(9+sqrt(17)))/2
+
+const_mean = sqrt(1/(const-1))
+const_var = 1
+
+mu_param = log(const_mean^2/sqrt(const_mean^2+const_var))
+sd_param = sqrt(log(1+const_var/const_mean^2))
+
+R <- 10000 # replications
+n = 10 # sample size
+ns_10 <- rep(0, R)# sample sizes
+effs_10 <- rep(0, R)
+for(r in 1:R){
+  test  <- data.frame("condition" = rep(as.factor(1:2), each=n), 
+                          "effect" = vec_interleave(rlnorm(n, mu_param, sd_param),
+                                       rlnorm(n, mu_param, sd_param) + d))
+  pilot.anova <- as.matrix(anova(aov(effect ~ condition, data=test)))
+  SSb <- pilot.anova[1,2]
+  SSt <- pilot.anova[1,2] + pilot.anova[2,2]
+  eta2 <- SSb/SSt
+  effest <- 2*sqrt(eta2/(1-eta2))
+  effs_10[r] <- effest
+  ns_10[r] <- 2*(qlnorm(0.975, mu_param,sd_param) + qlnorm(0.8, mu_param, sd_param))^2 * pooled_variance(test)/ effest^2
+}
+
+n = 25
+ns_25 <- rep(0, R)# sample sizes
+effs_25 <- rep(0, R)
+for(r in 1:R){
+  test  <- data.frame("condition" = rep(as.factor(1:2), each=n), 
+                          "effect" = vec_interleave(rlnorm(n, mu_param, sd_param),
+                                       rlnorm(n, mu_param, sd_param) + d))
+  pilot.anova <- as.matrix(anova(aov(effect ~ condition, data=test)))
+  SSb <- pilot.anova[1,2]
+  SSt <- pilot.anova[1,2] + pilot.anova[2,2]
+  eta2 <- SSb/SSt
+  effest <- 2*sqrt(eta2/(1-eta2))
+  effs_25[r] <- effest
+  ns_25[r] <- 2*(qlnorm(0.975, mu_param,sd_param) + qlnorm(0.8, mu_param, sd_param))^2 * pooled_variance(test)/ effest^2
+}
+
+n = 50
+ns_50 <- rep(0, R)# sample sizes
+effs_50 <- rep(0, R)
+for(r in 1:R){
+  test  <- data.frame("condition" = rep(as.factor(1:2), each=n), 
+                          "effect" = vec_interleave(rlnorm(n, mu_param, sd_param),
+                                       rlnorm(n, mu_param, sd_param) + d))
+  pilot.anova <- as.matrix(anova(aov(effect ~ condition, data=test)))
+  SSb <- pilot.anova[1,2]
+  SSt <- pilot.anova[1,2] + pilot.anova[2,2]
+  eta2 <- SSb/SSt
+  effest <- 2*sqrt(eta2/(1-eta2))
+  effs_50[r] <- effest
+  ns_50[r] <- 2*(qlnorm(0.975, mu_param,sd_param) + qlnorm(0.8, mu_param, sd_param))^2 * pooled_variance(test)/ effest^2
+}
+
+effs <- data.frame(cbind(effs_10, effs_25, effs_50))
+effs %>% pivot_longer(1:3)  %>% 
+  ggplot(aes(x = name, y = value, fill = name)) + geom_violin() + xlab("Pilot Study Sample Size") + 
+  ylab("Effect Size Estimate") + ggtitle("Effect Size Estimate vs Pilot Study Sample Size") + scale_x_discrete(labels = c("10", "25", "50")) + 
+  geom_point(aes(x = 1, y = d)) + geom_point(aes(x = 2, y = d)) + geom_point(aes(x = 3, y = d)) + 
+  theme(legend.position = "none")
+
+
+ns <- data.frame(cbind(ns_10, ns_25, ns_50))
+n_needed <- 2*(qlnorm(0.975, mu_param,sd_param) + qlnorm(0.8, mu_param, sd_param))^2 / d^2
+ns %>% pivot_longer(1:3) %>% filter(value <= 10000) %>% 
+  ggplot(aes(x = name, y = value, fill = name)) + geom_violin() + xlab("Pilot Study Sample Size") + 
+  ylab("Main Study Sample Size Estimate") + ggtitle("Main Study Sample Size Estimate vs Pilot Study Sample Size") + scale_x_discrete(labels = c("10", "25", "50")) + 
+  geom_point(aes(x = 1, y = n_needed)) + geom_point(aes(x = 2, y = n_needed)) + geom_point(aes(x = 3, y = n_needed)) + 
+  theme(legend.position = "none")
+```
+
+
+```{r}
+### Section 3.1
+set.seed(1)
+# plotting COS
+#ES = 0.0099 # small effect size
+#ES = 0.0588 # medium effect size
+ES = 0.1379 # large
+f <- sqrt(ES/(1-ES)) # Cohen's f
+muvec <- c(-f, f)
+B <- 10 # number of bootstrap
+
+n <- 500 # sample size per group
+samps <- 10:n
+
+pilot.data  <- data.frame("condition" = rep(as.factor(1:2), length.out= 2*n), 
+                          "effect" = rnorm(n = 2*n, mean = rep(muvec, length.out=2*n), sd = 1))
+
+# for a single sample
+estimates <- sapply(3:n, function(x) {
+  #pilot.anova <- as.matrix(anova(aov(effect ~ ., data=pilot.data[1:x,])))
+  #SSb <- pilot.anova[1,2]
+  #SSt <- pilot.anova[1,2] + pilot.anova[2,2]
+  #SSb/SSt #Estimate of effect size (eta2)
+  
+  test = pilot.data[1:(2*x), ]
+  mu1 = mean(test$effect[test$condition==1])
+  mu2 = mean(test$effect[test$condition==2])
+  var1 = var(test$effect[test$condition==1])
+  var2 = var(test$effect[test$condition==2])
+  (mu2 - mu1)/sqrt(((x-1)*var1 + (x-1)*var2)/(2*x-2))
+})
+plot(estimates, type="l", ylim=c(-0.2, 1.8), xlab="Sample Size", ylab=bquote(d), lwd=3)
+abline(h = sqrt(f))
+abline(h = c(sqrt(f)-0.1, sqrt(f)+0.1), lty = 2)
+
+for(i in 1:B) {
+  #draw the bootstrap sample
+  bootstrap <- sample_n(pilot.data, 2 * n, replace=TRUE)
+  estimates_bootstrap <- sapply(samps, function(x) {
+    test = bootstrap[1:(2*x), ]
+    mu1 = mean(test$effect[test$condition==1])
+    mu2 = mean(test$effect[test$condition==2])
+    var1 = var(test$effect[test$condition==1])
+    var2 = var(test$effect[test$condition==2])
+    (mu2 - mu1)/sqrt(((x-1)*var1 + (x-1)*var2)/(2*x-2))
+  })
+  points(10:n, estimates_bootstrap, type="l", col=rgb(0,0,0,0.5))
+}
+
+
+## tables
+set.seed(1)
+findPOS <- function(n, estimates, ES, width) {
+	COS <- ES + c(-1, 1) * width
+	breaks <- which(estimates < COS[1] | estimates > COS[2])
+	if (is.infinite(max(breaks))) {
+		n.stable <- min(n)	# no break: POS = minimal sample size
+	} else {
+			BREAK <- max(breaks)	# get first break (seen from the tail)
+		if (is.na(BREAK)) {
+			n.stable <- min(n)	# no break? POS = minimal sample size
+		} else {
+			n.stable <- n[BREAK]
+		}
+	}
+	return(data.frame(POS=n.stable, w=width))
+}
+
+
+## just need to change d
+set.seed(1)
+d = 0.8 # small effect size, change for other effect sizes
+muvec <- c(0, d)
+B <- 10000 # number of bootstrap
+
+n <- 1000 # sample size per group
+samps <- 10:n
+
+pilot.data  <- data.frame("condition" = rep(as.factor(1:2), length.out= 2*100000), 
+                          "effect" = rnorm(n = 2*100000, mean = rep(muvec, length.out=2*100000), sd = 1))
+
+POS <- sapply(1:B, function(y) {
+  #draw the bootstrap sample
+  bootstrap <- sample_n(pilot.data, 2 * n, replace=TRUE)
+  estimates <- sapply(samps, function(x) {
+    test = bootstrap[1:(2*x), ]
+    mu1 = mean(test$effect[test$condition==1])
+    mu2 = mean(test$effect[test$condition==2])
+    var1 = var(test$effect[test$condition==1])
+    var2 = var(test$effect[test$condition==2])
+    (mu2 - mu1)/sqrt(((x-1)*var1 + (x-1)*var2)/(2*x-2))
+  })
+  c(findPOS(samps, estimates, d, 0.1)$POS,
+    findPOS(samps, estimates, d, 0.15)$POS)
+})
+quantile(POS[1,],0.8)
+quantile(POS[2,],0.8)
+quantile(POS[1,],0.9)
+quantile(POS[2,],0.9)
+quantile(POS[1,],0.95)
+quantile(POS[2,],0.95)
+```
+
+```{r}
+### Section 3.1.1
+set.seed(1)
+library(tidyverse)
+library(vctrs)
+
+findPOS <- function(n, estimates, ES, width) {
+	COS <- ES + c(-1, 1) * width
+	breaks <- which(estimates < COS[1] | estimates > COS[2])
+	if (is.infinite(max(breaks))) {
+		n.stable <- min(n)	# no break: POS = minimal sample size
+	} else {
+			BREAK <- max(breaks)	# get first break (seen from the tail)
+		if (is.na(BREAK)) {
+			n.stable <- min(n)	# no break? POS = minimal sample size
+		} else {
+			n.stable <- n[BREAK]
+		}
+	}
+	return(data.frame(POS=n.stable, w=width))
+}
+
+# plotting COS
+d <- 0.2 # change to 0.5, 0.8 for the other effect sizes
+muvec <- c(0, d)
+B <- 10000 # number of bootstrap
+
+cRoot <- function(x) exp(1/3 * log(x))
+
+## Constants for lognormal to generate skewness 1 and 0.5, rough math for this is in the mathForLognormal in the overleaf
+# skewness 1
+#const = -1 + 1/3*cRoot(81/2-27*sqrt(5)/2) + cRoot(1/2*(3+sqrt(5))) 
+# skewness 0.5
+const = (-2 + cRoot(9-sqrt(17)) + cRoot(9+sqrt(17)))/2
+
+const_mean = sqrt(1/(const-1))
+const_var = 1
+
+mu_param = log(const_mean^2/sqrt(const_mean^2+const_var))
+sd_param = sqrt(log(1+const_var/const_mean^2))
+
+
+n <- 1000 # sample size per group
+samps <- 10:n
+
+pilot.data  <- data.frame("condition" = rep(as.factor(1:2), times= 1000000), 
+                          "effect" = vec_interleave(rlnorm(1000000, mu_param, sd_param),
+                                       rlnorm(1000000, mu_param, sd_param) + d))
+
+POS <- sapply(1:B, function(y) {
+  #draw the bootstrap sample
+  bootstrap <- sample_n(pilot.data, 2 * n, replace=TRUE)
+  estimates <- sapply(samps, function(x) {
+    test = bootstrap[1:(2*x), ]
+    mu1 = mean(test$effect[test$condition==1])
+    mu2 = mean(test$effect[test$condition==2])
+    var1 = var(test$effect[test$condition==1])
+    var2 = var(test$effect[test$condition==2])
+    (mu2 - mu1)/sqrt(((x-1)*var1 + (x-1)*var2)/(2*x-2))
+  })
+  c(findPOS(samps, estimates, d, 0.1)$POS,
+    findPOS(samps, estimates, d, 0.15)$POS)
+})
+quantile(POS[1,],0.8)
+quantile(POS[2,],0.8)
+quantile(POS[1,],0.9)
+quantile(POS[2,],0.9)
+quantile(POS[1,],0.95)
+quantile(POS[2,],0.95)
+```
+
+```{r}
+### Section 3.2.1
+library(tidyverse)
+set.seed(1)
+#ES = 0.0099 # small effect size
+#ES = 0.0588 # medium effect size
+ES = 0.1379 # large
+n <- 10 # sample size per group
+l = 0.3 # length of credible interval
+
+f <- sqrt(ES/(1-ES)) # Cohen's f
+muvec <- c(-f, f)
+B1 <- 5000 # number of bootstrap
+B2 <- 1000
+
+pooled_variance <- function(data){
+  n <- nrow(data) / 2
+  ((n-1) * var(data[,2][data[,1]==1]) + (n-1) * var(data[,2][data[,1]==2])) / (2*n - 2)
+}
+
+n_10 <- sapply(1:B2, function(y){
+  pilot.data  <- data.frame("condition" = rep(as.factor(1:2), length.out= 2*n), 
+                            "effect" = rnorm(n = 2*n, mean = rep(muvec, length.out=2*n), sd = 1))
+  
+  var_est = pooled_variance(pilot.data)
+  var_ests <- sapply(1:B1, function(x){
+    samp <- sample(1:(2*n), 2*n, TRUE)
+    sample <- pilot.data[samp,]
+    pooled_variance(sample)
+  })
+  var_var_est <- var(var_ests)
+  
+  v = var_est^2 / var_var_est
+  beta = sqrt(v/var_var_est)
+  
+  A = v * l^2 / 4
+  B = v * l^2 * n/ 4 - 2 * beta * qt(0.975, 2*v)
+  C = n^2/4 * v * l^2 / 4 - beta * qt(0.975, 2*v) * n
+  ceiling((-B + sqrt(B^2 - 4 * A* C))/(2*A))
+})
+
+n <- 25
+n_25 <- sapply(1:B2, function(y){
+  pilot.data  <- data.frame("condition" = rep(as.factor(1:2), length.out= 2*n), 
+                            "effect" = rnorm(n = 2*n, mean = rep(muvec, length.out=2*n), sd = 1))
+  
+  var_est = pooled_variance(pilot.data)
+  var_ests <- sapply(1:B1, function(x){
+    samp <- sample(1:(2*n), 2*n, TRUE)
+    sample <- pilot.data[samp,]
+    pooled_variance(sample)
+  })
+  var_var_est <- var(var_ests)
+  
+  v = var_est^2 / var_var_est
+  beta = sqrt(v/var_var_est)
+  
+  A = v * l^2 / 4
+  B = v * l^2 * n/ 4 -2 * beta * qt(0.975, 2*v)
+  C = n^2/4 * v * l^2 / 4 - beta * qt(0.975, 2*v) * n
+   ceiling((-B + sqrt(B^2 - 4 * A* C))/(2*A))
+})
+
+
+n <- 50 
+n_50 <- sapply(1:B2, function(y){
+  pilot.data  <- data.frame("condition" = rep(as.factor(1:2), length.out= 2*n), 
+                            "effect" = rnorm(n = 2*n, mean = rep(muvec, length.out=2*n), sd = 1))
+  
+  var_est = pooled_variance(pilot.data)
+  var_ests <- sapply(1:B1, function(x){
+    samp <- sample(1:(2*n), 2*n, TRUE)
+    sample <- pilot.data[samp,]
+    pooled_variance(sample)
+  })
+  var_var_est <- var(var_ests)
+  
+  v = var_est^2 / var_var_est
+  beta = sqrt(v/var_var_est)
+  
+  A = v * l^2 / 4
+  B = v * l^2 * n/ 4 -2 * beta * qt(0.975, 2*v)
+  C = n^2/4 * v * l^2 / 4 - beta * qt(0.975, 2*v) * n
+  ceiling((-B + sqrt(B^2 - 4 * A* C))/(2*A))
+})
+
+ns <- data.frame(cbind(n_10, n_25, n_50))
+ns %>% pivot_longer(1:3)  %>% 
+  ggplot(aes(x = name, y = value, fill = name)) + geom_violin() + xlab("Pilot Study Sample Size") + 
+  ylab("Main Study Sample Size Estimate") + ggtitle("Main Study Sample Size Estimate vs Pilot StudySample Size (large effect)") + scale_x_discrete(labels = c("10", "25", "50")) +
+  theme(legend.position = "none")
+```
+
+```{r}
+### Section 3.2.2
+library(tidyverse)
+set.seed(1)
+#ES = 0.0099 # small effect size
+#ES = 0.0588 # medium effect size
+ES = 0.1379 # large
+l = 0.3 # length of credible interval
+
+f <- sqrt(ES/(1-ES)) # Cohen's f
+muvec <- c(-f, f)
+B1 <- 5000 # number of bootstrap
+B2 <- 500
+
+pooled_variance <- function(data){
+  n <- nrow(data) / 2
+  if(all(data$condition==1) || all(data$condition==2)) {
+    return(var(data$effect))
+  }
+  if(is.na(var(data$effect[data$condition==1]))) {
+    return(var(data$effect[data$condition==2]))
+  }
+  if(is.na(var(data$effect[data$condition==2]))) {
+    return(var(data$effect[data$condition==1]))
+  }
+  return(((n-1) * var(data$effect[data$condition==1]) + (n-1) * var(data$effect[data$condition==2])) / (2*n - 2))
+}
+
+# function we need to minimize n over, function needs to return <= l
+to_min <- function(beta, v, n, n0, alpha = 0.05) {
+  2 * qt(1-alpha/2, 2*n + 2 * v) * sqrt(2 * beta * (2*n+2*n0)/((2*n+2*v)*(n+n0)*(n+n0))) * 
+    gamma((2*n+2*v)/2)*gamma((2*v-1)/2)/ gamma(v) / gamma((2*n+2*v-1)/2)
+}
+
+bisect <- function(beta, v, n0, iter = 1000, tol=1e-7){
+  a = 1
+  b = 800
+  while(is.infinite(to_min(beta, v, b, n0)) || is.nan(to_min(beta, v, b, n0))) b <- b - 1
+  
+  for(i in 1:iter){
+    c <- (a+b)/2
+    if(to_min(beta, v, b, n0) == l || ((b-a)/2) < tol) return(c)
+    ifelse(sign(to_min(beta,v,c,n0)-l) == sign(to_min(beta,v,a,n0)-l), 
+           a <- c, 
+           b <- c)
+  }
+}
+
+n <- 10 # sample size per group
+n_10 <- sapply(1:B2, function(y){
+  pilot.data  <- data.frame("condition" = rep(as.factor(1:2), length.out= 2*n), 
+                            "effect" = rnorm(n = 2*n, mean = rep(muvec, length.out=2*n), sd = 1))
+  
+  var_est = pooled_variance(pilot.data)
+  var_ests <- sapply(1:B1, function(x){
+    samp <- sample(1:(2*n), 2*n, TRUE)
+    sample <- pilot.data[samp,]
+    pooled_variance(sample)
+  })
+  var_var_est <- var(var_ests)
+  
+  v = var_est^2 / var_var_est
+  beta = sqrt(v/var_var_est)
+  
+  ceiling(bisect(beta, v, n))
+})
+
+n <- 25 # sample size per group
+n_25 <- sapply(1:B2, function(y){
+  pilot.data  <- data.frame("condition" = rep(as.factor(1:2), length.out= 2*n), 
+                            "effect" = rnorm(n = 2*n, mean = rep(muvec, length.out=2*n), sd = 1))
+  
+  var_est = pooled_variance(pilot.data)
+  var_ests <- sapply(1:B1, function(x){
+    samp <- sample(1:(2*n), 2*n, TRUE)
+    sample <- pilot.data[samp,]
+    pooled_variance(sample)
+  })
+  var_var_est <- var(var_ests)
+  
+  v = var_est^2 / var_var_est
+  beta = sqrt(v/var_var_est)
+  
+  ceiling(bisect(beta, v, n))
+})
+
+n <- 50 # sample size per group
+n_50 <- sapply(1:B2, function(y){
+  pilot.data  <- data.frame("condition" = rep(as.factor(1:2), length.out= 2*n), 
+                            "effect" = rnorm(n = 2*n, mean = rep(muvec, length.out=2*n), sd = 1))
+  
+  var_est = pooled_variance(pilot.data)
+  var_ests <- sapply(1:B1, function(x){
+    samp <- sample(1:(2*n), 2*n, TRUE)
+    sample <- pilot.data[samp,]
+    pooled_variance(sample)
+  })
+  var_var_est <- var(var_ests)
+  
+  v = var_est^2 / var_var_est
+  beta = sqrt(v/var_var_est)
+  
+  ceiling(bisect(beta, v, n))
+})
+
+ns <- data.frame(cbind(n_10, n_25, n_50))
+ns %>% pivot_longer(1:3)  %>% 
+  ggplot(aes(x = name, y = value, fill = name)) + geom_violin() + xlab("Sample Size") + 
+  ylab("Sample Size Estimate") + ggtitle("Sample Size Estimate vs Pilot Sample Size (small effect)") + scale_x_discrete(labels = c("10", "25", "50")) +
+  theme(legend.position = "none")
+```
+
+```{r}
+### Section 3.2.3
+#log normal ACC
+library(tidyverse)
+library(vctrs)
+
+d <- 0.8
+l = 0.3
+B1 <- 5000 # number of bootstrap
+B2 <- 500
+
+#skewness 1
+const = -1 + 1/3*cRoot(81/2-27*sqrt(5)/2) + cRoot(1/2*(3+sqrt(5))) 
+# skewness 0.5
+#const = (-2 + cRoot(9-sqrt(17)) + cRoot(9+sqrt(17)))/2
+
+const_mean = sqrt(1/(const-1))
+const_var = 1
+
+mu_param = log(const_mean^2/sqrt(const_mean^2+const_var))
+sd_param = sqrt(log(1+const_var/const_mean^2))
+
+
+n <- 10 # sample size per group
+n_10 <- sapply(1:B2, function(y){
+  pilot.data  <- data.frame("condition" = rep(as.factor(1:2), each=n), 
+                          "effect" = vec_interleave(rlnorm(n, mu_param, sd_param),
+                                       rlnorm(n, mu_param, sd_param) + d))
+  
+  var_est = pooled_variance(pilot.data)
+  var_ests <- sapply(1:B1, function(x){
+    samp <- sample(1:(2*n), 2*n, TRUE)
+    sample <- pilot.data[samp,]
+    pooled_variance(sample)
+  })
+  var_var_est <- var(var_ests)
+  
+  v = var_est^2 / var_var_est
+  beta = sqrt(v/var_var_est)
+  
+  # comparing bayesian average coverage criterion
+  A = v * l^2 / 4
+  B = v * l^2 * n/ 4 -2 * beta * qt(0.975, 2*v)
+  C = n^2/4 * v * l^2 / 4 - beta * qt(0.975, 2*v) * n
+  ceiling((-B + sqrt(B^2 - 4 * A* C))/(2*A))
+})
+
+n <- 25
+n_25 <- sapply(1:B2, function(y){
+  pilot.data  <-  data.frame("condition" = rep(as.factor(1:2), each=n), 
+                          "effect" = vec_interleave(rlnorm(n, mu_param, sd_param),
+                                       rlnorm(n, mu_param, sd_param) + d))
+  
+  var_est = pooled_variance(pilot.data)
+  var_ests <- sapply(1:B1, function(x){
+    samp <- sample(1:(2*n), 2*n, TRUE)
+    sample <- pilot.data[samp,]
+    pooled_variance(sample)
+  })
+  var_var_est <- var(var_ests)
+  
+  v = var_est^2 / var_var_est
+  beta = sqrt(v/var_var_est)
+  
+  # comparing bayesian average coverage criterion
+  A = v * l^2 / 4
+  B = v * l^2 * n/ 4 -2 * beta * qt(0.975, 2*v)
+  C = n^2/4 * v * l^2 / 4 - beta * qt(0.975, 2*v) * n
+  ceiling((-B + sqrt(B^2 - 4 * A* C))/(2*A))
+})
+
+n <- 50 # sample size per group
+n_50 <- sapply(1:B2, function(y){
+  pilot.data  <- data.frame("condition" = rep(as.factor(1:2), each=n), 
+                          "effect" = vec_interleave(rlnorm(n, mu_param, sd_param),
+                                       rlnorm(n, mu_param, sd_param) + d))
+  
+  var_est = pooled_variance(pilot.data)
+  var_ests <- sapply(1:B1, function(x){
+    samp <- sample(1:(2*n), 2*n, TRUE)
+    sample <- pilot.data[samp,]
+    pooled_variance(sample)
+  })
+  var_var_est <- var(var_ests)
+  
+  v = var_est^2 / var_var_est
+  beta = sqrt(v/var_var_est)
+  
+  # comparing bayesian average coverage criterion
+  A = v * l^2 / 4
+  B = v * l^2 * n/ 4 -2 * beta * qt(0.975, 2*v)
+  C = n^2/4 * v * l^2 / 4 - beta * qt(0.975, 2*v) * n
+  ceiling((-B + sqrt(B^2 - 4 * A* C))/(2*A))
+})
+
+ns <- data.frame(cbind(n_10, n_25, n_50))
+ns %>% pivot_longer(1:3)  %>% 
+  ggplot(aes(x = name, y = value, fill = name)) + geom_violin() + xlab("Sample Size") + 
+  ylab("Sample Size Estimate") + ggtitle("Sample Size Estimate vs Pilot Sample Size (large effect)") + scale_x_discrete(labels = c("10", "25", "50")) +
+  theme(legend.position = "none")
+
+# log normal ALC
+library(tidyverse)
+library(vctrs)
+cRoot <- function(x) exp(1/3 * log(x))
+B1 <- 5000 # number of bootstrap
+B2 <- 500
+d <- 0.8
+l <- 0.3
+# skewness 1
+const = -1 + 1/3*cRoot(81/2-27*sqrt(5)/2) + cRoot(1/2*(3+sqrt(5))) 
+# skewness 0.5
+#const = (-2 + cRoot(9-sqrt(17)) + cRoot(9+sqrt(17)))/2
+
+const_mean = sqrt(1/(const-1))
+const_var = 1
+
+mu_param = log(const_mean^2/sqrt(const_mean^2+const_var))
+sd_param = sqrt(log(1+const_var/const_mean^2))
+
+pooled_variance <- function(data){
+  n <- nrow(data) / 2
+  if(all(data$condition==1) || all(data$condition==2)) {
+    return(var(data$effect))
+  }
+  if(is.na(var(data$effect[data$condition==1]))) {
+    return(var(data$effect[data$condition==2]))
+  }
+  if(is.na(var(data$effect[data$condition==2]))) {
+    return(var(data$effect[data$condition==1]))
+  }
+  return(((n-1) * var(data$effect[data$condition==1]) + (n-1) * var(data$effect[data$condition==2])) / (2*n - 2))
+}
+
+# function we need to minimize n over, function needs to return <= l
+to_min <- function(beta, v, n, n0, alpha = 0.05) {
+  2 * qt(1-alpha/2, 2*n + 2 * v) * sqrt(2 * beta * (2*n+2*n0)/((2*n+2*v)*(n+n0)*(n+n0))) * 
+    gamma((2*n+2*v)/2)*gamma((2*v-1)/2)/ gamma(v) / gamma((2*n+2*v-1)/2)
+}
+
+
+bisect <- function(beta, v, n0, iter = 1000, tol=1e-7){
+  a = 1
+  b = 800
+  while(is.infinite(to_min(beta, v, b, n0)) || is.nan(to_min(beta, v, b, n0))) b <- b - 1
+  
+  for(i in 1:iter){
+    c <- (a+b)/2
+    if(to_min(beta, v, b, n0) == l || ((b-a)/2) < tol) return(c)
+    ifelse(sign(to_min(beta,v,c,n0)-l) == sign(to_min(beta,v,a,n0)-l), 
+           a <- c, 
+           b <- c)
+  }
+}
+
+n <- 10 # sample size per group
+n_10 <- sapply(1:B2, function(y){
+  pilot.data  <- data.frame("condition" = rep(as.factor(1:2), each=n), 
+                          "effect" = vec_interleave(rlnorm(n, mu_param, sd_param),
+                                       rlnorm(n, mu_param, sd_param) + d))
+  
+  var_est = pooled_variance(pilot.data)
+  var_ests <- sapply(1:B1, function(x){
+    samp <- sample(1:(2*n), 2*n, TRUE)
+    sample <- pilot.data[samp,]
+    pooled_variance(sample)
+  })
+  var_var_est <- var(var_ests)
+  
+  v = var_est^2 / var_var_est
+  beta = sqrt(v/var_var_est)
+  
+  ceiling(bisect(beta, v, n))
+})
+
+n <- 25 # sample size per group
+n_25 <- sapply(1:B2, function(y){
+  pilot.data  <- data.frame("condition" = rep(as.factor(1:2), each=n), 
+                          "effect" = vec_interleave(rlnorm(n, mu_param, sd_param),
+                                       rlnorm(n, mu_param, sd_param) + d))
+  
+  var_est = pooled_variance(pilot.data)
+  var_ests <- sapply(1:B1, function(x){
+    samp <- sample(1:(2*n), 2*n, TRUE)
+    sample <- pilot.data[samp,]
+    pooled_variance(sample)
+  })
+  var_var_est <- var(var_ests)
+  
+  v = var_est^2 / var_var_est
+  beta = sqrt(v/var_var_est)
+  
+  ceiling(bisect(beta, v, n))
+})
+
+n <- 50 # sample size per group
+n_50 <- sapply(1:B2, function(y){
+  pilot.data  <- data.frame("condition" = rep(as.factor(1:2), each=n), 
+                          "effect" = vec_interleave(rlnorm(n, mu_param, sd_param),
+                                       rlnorm(n, mu_param, sd_param) + d))
+  
+  var_est = pooled_variance(pilot.data)
+  var_ests <- sapply(1:B1, function(x){
+    samp <- sample(1:(2*n), 2*n, TRUE)
+    sample <- pilot.data[samp,]
+    pooled_variance(sample)
+  })
+  var_var_est <- var(var_ests)
+  
+  v = var_est^2 / var_var_est
+  beta = sqrt(v/var_var_est)
+  
+  ceiling(bisect(beta, v, n))
+})
+
+ns <- data.frame(cbind(n_10, n_25, n_50))
+ns %>% pivot_longer(1:3)  %>% 
+  ggplot(aes(x = name, y = value, fill = name)) + geom_violin() + xlab("Sample Size") + 
+  ylab("Sample Size Estimate") + ggtitle("Sample Size Estimate vs Pilot Sample Size (small effect)") + scale_x_discrete(labels = c("10", "25", "50")) +
+  theme(legend.position = "none")
+```
