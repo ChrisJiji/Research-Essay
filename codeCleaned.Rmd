@@ -9,7 +9,7 @@ set.seed(1)
 
 ## Generate the plots for effect size vs pilot study sample size and main study sample size and pilot study
 
-# this is using 
+# this is using Cohen's f to generate the groups, it does the same as just setting the group means to be (0,d), which is what I do later
 ES <- 0.0099 # effect size, change to 0.1379 for large
 f2 <- ES/(1-ES)
 a = sqrt(f2)
