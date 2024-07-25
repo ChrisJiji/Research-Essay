@@ -1,0 +1,1 @@
+Paper and code for my master's research paper for partial fulfillment of the requirements for the degree of Master of Mathematics in Statistics at the University of Waterloo. The .Rmd file contains all of the code to generate the plots in the paper, in the order that they are presented. 
